@@ -1,25 +1,18 @@
-use std::collections::HashMap;
-
-use parser::DbBase;
-use serde_json::Value;
-
-mod parser;
+mod rdb;
 
 mod prelude {
-    pub const EXTENSION: &str = "rdb";
+    pub const EXTENSION: &str = "json";
+    pub use serde_json::Value;
+    pub use crate::rdb::*;
 }
 
+use crate::prelude::*;
+
 fn main() {
-    let mut db = DbBase::from_name("testdb".to_string()).unwrap();
-    println!("{:?}", db);
-    // db.add_table("cargo".to_string()).unwrap();
-    let mut table = db.get_table("cargo".to_string()).unwrap();
-    println!("table: {:?}", table);
-    table
-        .update("some".to_string(), Value::Array(Vec::from([Value::String("one".to_string()), Value::String("value".to_string())]))).unwrap();
-        // .get_value("another_key".to_string()).unwrap();
-        // .add("some".to_string(), Value::String("new key".to_string())).unwrap()
-        // .add("another_key".to_string(), Value::Null).unwrap();
-    // println!("value: {:?}", value);
-    println!("table: {:?}", table);
+    let mut db = DbBase::new("testdb".to_string()).unwrap();
+    println!("database tables: {}", db);
+    db.add_table("testing".to_string()).unwrap();
+    println!("database tables: {}", db);
+    let table = db.get_table("cargo".to_string()).unwrap();
+    println!("table: {}", table);
 }

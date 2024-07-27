@@ -1,11 +1,9 @@
 use std::{collections::HashMap, fmt::Display, fs::{self, File}, path::Path};
-use serde_json::Value;
-
 use crate::prelude::*;
 
 pub type DbData = HashMap<String, Value>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DbBase {
     name: String,
     tables: Vec<String>,
@@ -75,14 +73,28 @@ impl DbBase {
             tables: Vec::new(),
         }
     }
-    pub fn add_table(&mut self, name: String) -> Result<DbTable, String> {
+    pub fn add_table(&mut self, name: String) -> Result<(&mut Self, DbTable), String> {
         let has_table = self.tables.iter().find(|x| *x == &name);
         if has_table.is_some() {
             return Err(format!("Table `{name}` already exists"))
         } else {
             let table = DbTable::new(name.clone(), &self).unwrap();
             self.tables.push(name);
-            Ok(table)
+            Ok((self, table))
+        }
+    }
+    pub fn drop_table(&mut self, name: String) -> Result<&mut Self, String> {
+        let index = self.tables.iter().enumerate().find(|&x| x.1 == &name);
+        match index {
+            Some(n) => {
+                let table = self.get_table(name.clone()).unwrap();
+                let path = table.get_file_path();
+                fs::remove_file(path).expect(format!("Error while removing table `{}` from db `{}`", &name, self.name).as_str());
+                
+                self.tables.remove(n.0);
+                Ok(self)
+            }
+            None => Err(format!("Table `{name}` does not exist"))
         }
     }
     pub fn get_table(&self, name: String) -> Result<DbTable, String> {
@@ -98,19 +110,32 @@ impl DbBase {
 
 impl Display for DbBase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output: String = "".to_string();
         for table in self.tables.iter() {
-            return write!(f, " - {table}")
+            output.push_str(format!("\n - {table}").as_str());
         }
-        Ok(())
+        
+        write!(f, "{output}")
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DbTable {
     name: String,
     parent_name: String,
     data: DbData,
     keys: Vec<String>,
+}
+
+impl Display for DbTable {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output: String = "\n{".to_string();
+        for key in self.keys.clone() {
+            output.push_str(format!("\n  {}: {},", &key, self.get(key.clone()).unwrap()).as_str());
+        }
+        output.push_str("\n}");
+        write!(f, "{output}")
+        }
 }
 
 impl DbTable {
@@ -152,9 +177,8 @@ impl DbTable {
         self.data = new_data.data;
         self.keys = new_data.keys;
         Ok(self)
-
     }
-    pub fn get_value(&self, key: String) -> Result<Value, String> {
+    pub fn get(&self, key: String) -> Result<Value, String> {
         if self.keys.contains(&key) {
             return Ok(self.data.clone().get(&key).unwrap().to_owned())
         }
@@ -179,6 +203,17 @@ impl DbTable {
             self.data.remove(&key);
             self.data.insert(key, value);
             self.rewrite(self.data.clone()).expect(format!("Error while updating table `{name}` in db `{parent_name}`").as_str());
+            Ok(self)
+        } else {
+            Err(format!("key `{key}` does not exist"))
+        }
+    }
+    pub fn remove(&mut self, key: String) -> Result<&mut Self, String> {
+        let name = self.name.clone();
+        let parent_name = self.parent_name.clone();
+        if self.keys.contains(&key) {
+            self.data.remove(&key);
+            self.rewrite(self.data.clone()).expect(format!("Error while removing table key `{key}` in table `{name}` in db `{parent_name}`").as_str());
             Ok(self)
         } else {
             Err(format!("key `{key}` does not exist"))
